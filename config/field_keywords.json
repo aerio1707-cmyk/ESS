@@ -1,0 +1,18 @@
+{
+  "tax_id": {
+    "exact": ["統編", "統一編號", "統一編", "Tax ID", "Tax No"],
+    "fuzzy": ["統編", "統一編號", "Tax ID", "Tax No", "ID"]
+  },
+  "customer_name": {
+    "exact": ["客戶", "客戶名稱", "公司名稱", "Customer", "Company"],
+    "fuzzy": ["客戶", "客戶名稱", "公司名稱", "Customer", "Company"]
+  },
+  "group_name": {
+    "exact": ["Group Name", "集團", "關鍵字"],
+    "fuzzy": ["Group Name", "集團", "關鍵字"]
+  },
+  "acc_se": {
+    "exact": ["Acc. SE", "Acc.SE", "負責人", "SE Name"],
+    "fuzzy": ["Acc. SE", "Acc.SE", "負責人", "SE Name", "業務"]
+  }
+}

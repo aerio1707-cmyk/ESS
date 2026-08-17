@@ -1,0 +1,21 @@
+# 真實客戶資料樣本檔（含統編/客戶名稱/負責人姓名/email/手機），絕不進 public repo
+*.xlsx
+*.xls
+*.csv
+
+# 執行輸出（比對結果，含真實客戶資料）
+output/
+
+# 欄位對應設定記憶（可能記錄真實檔案結構特徵）
+config/mapping_profiles/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 編輯器/系統
+.vscode/
+.idea/
+Thumbs.db
