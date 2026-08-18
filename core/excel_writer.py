@@ -12,14 +12,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from core.models import AnomalyCode, FieldMapping, MatchPass, MatchResult
 
-MATCH_STATUS_HEADER = "Match Status"
-
 HEADER_FILL = PatternFill("solid", fgColor="305496")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
-
-UNMATCHED_FILL = PatternFill("solid", fgColor="F8CBAD")  # 淡紅：無法匹配
-DUPLICATE_FILL = PatternFill("solid", fgColor="FFE699")  # 淡黃：名冊重複衝突
 
 THIN_GRAY = Side(style="thin", color="D9D9D9")
 CELL_BORDER = Border(left=THIN_GRAY, right=THIN_GRAY, top=THIN_GRAY, bottom=THIN_GRAY)
@@ -37,14 +32,6 @@ ANOMALY_ADVICE: dict[str, str] = {
     AnomalyCode.FORMULA_ERROR.value: "來源欄位為公式錯誤值，請確認原始資料",
     AnomalyCode.ROSTER_DUPLICATE_CONFLICT.value: "名冊同統編/名稱對應多位負責人，請人工確認正確人選",
 }
-
-
-def _row_fill(result: MatchResult) -> PatternFill | None:
-    if result.match_pass == MatchPass.UNMATCHED:
-        return UNMATCHED_FILL
-    if AnomalyCode.ROSTER_DUPLICATE_CONFLICT in result.anomalies:
-        return DUPLICATE_FILL
-    return None
 
 
 def _apply_borders(ws: Worksheet, header_row: int, max_row: int, max_col: int) -> None:
@@ -96,39 +83,21 @@ def write_primary_output(
     output_dir: str | Path = "output",
     source_stem: str | None = None,
 ) -> Path:
-    """回填主檔：保留原始欄位與格式，覆寫 Acc.SE 欄，新增 Match Status 欄（規劃書 8.1）。"""
+    """回填主檔：只覆寫 Acc. SE 欄的值，其餘欄位、格式、儲存格顏色完全維持原始檔案不變。
+
+    不新增任何欄位（如 Match Status）、不上色、不調整欄寬列高/凍結窗格/框線——
+    使用者 2026-08-18 明確要求輸出檔案除了回填欄位本身，其他一律不動（含既有格式）。
+    """
     wb = load_workbook(target_path)
     ws = wb[mapping.sheet_name]
 
-    status_col = ws.max_column + 1
-    ws.cell(row=mapping.header_row, column=status_col, value=MATCH_STATUS_HEADER)
-
     results_by_row = {r.row_index: r for r in results}
 
-    # 步驟1：先完成所有資料寫入與比對狀態標色（規劃書模組6第6點：順序不可顛倒）
     for row in range(mapping.data_start_row, ws.max_row + 1):
         result = results_by_row.get(row)
         if result is None:
             continue
-        acc_se_cell = ws.cell(row=row, column=mapping.acc_se_output_col, value=result.matched_acc_se)
-        status_cell = ws.cell(row=row, column=status_col, value=result.match_pass.value)
-        fill = _row_fill(result)
-        if fill:
-            acc_se_cell.fill = fill
-            status_cell.fill = fill
-
-    for col in range(1, status_col + 1):
-        cell = ws.cell(row=mapping.header_row, column=col)
-        cell.fill = HEADER_FILL
-        cell.font = HEADER_FONT
-        cell.alignment = HEADER_ALIGN
-
-    ws.freeze_panes = ws.cell(row=mapping.data_start_row, column=1).coordinate
-    _apply_borders(ws, mapping.header_row, ws.max_row, status_col)
-
-    # 步驟2：最後才統一調整欄寬列高
-    _autosize_columns(ws, mapping.header_row, ws.max_row, status_col)
-    _autosize_rows(ws, mapping.header_row, ws.max_row, status_col)
+        ws.cell(row=row, column=mapping.acc_se_output_col, value=result.matched_acc_se)
 
     stem = source_stem or Path(target_path).stem
     output_dir = Path(output_dir)
