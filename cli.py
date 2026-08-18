@@ -1,4 +1,4 @@
-"""CR 負責人比對工具 — Phase 1 CLI 進入點。
+"""Acc. SE比對工具 — Phase 1 CLI 進入點。
 
 範例：
     python cli.py --target "目標檔.xlsx" --target-sheet "工作表1" \
