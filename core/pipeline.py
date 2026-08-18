@@ -24,10 +24,10 @@ def _iter_data_rows(ws, data_start_row: int):
         yield row
 
 
-def load_roster_entries(
-    path: str | Path, sheet_name: str, interactive: bool = True
-) -> tuple[list[RosterEntry], FieldMapping]:
-    mapping = build_field_mapping(path, sheet_name, is_double_header=True, interactive=interactive)
+def load_roster_entries_with_mapping(
+    path: str | Path, mapping: FieldMapping
+) -> list[RosterEntry]:
+    """給定已確認的 FieldMapping（例如網頁介面使用者確認過的欄位對應），載入名冊資料。"""
     ws = load_worksheet(path, mapping.sheet_name)
     merged_map = build_merged_value_map(ws)
 
@@ -61,6 +61,15 @@ def load_roster_entries(
                 acc_se_name=clean_acc_se,
             )
         )
+    return entries
+
+
+def load_roster_entries(
+    path: str | Path, sheet_name: str, interactive: bool = True
+) -> tuple[list[RosterEntry], FieldMapping]:
+    """CLI 用：偵測欄位對應（信心不足時互動詢問）後載入名冊資料。"""
+    mapping = build_field_mapping(path, sheet_name, is_double_header=True, interactive=interactive)
+    entries = load_roster_entries_with_mapping(path, mapping)
     return entries, mapping
 
 
@@ -71,14 +80,13 @@ class TargetLoadResult:
     formula_na_baseline: int | None
 
 
-def run_target_matching(
+def run_target_matching_with_mapping(
     path: str | Path,
-    sheet_name: str,
+    mapping: FieldMapping,
     roster_index: RosterIndex,
     formula_col: int | None = None,
-    interactive: bool = True,
 ) -> TargetLoadResult:
-    mapping = build_field_mapping(path, sheet_name, is_double_header=False, interactive=interactive)
+    """給定已確認的 FieldMapping，跑完整比對。"""
     ws = load_worksheet(path, mapping.sheet_name)
     merged_map = build_merged_value_map(ws)
 
@@ -119,6 +127,18 @@ def run_target_matching(
                 baseline_na += 1
 
     return TargetLoadResult(results=results, mapping=mapping, formula_na_baseline=baseline_na)
+
+
+def run_target_matching(
+    path: str | Path,
+    sheet_name: str,
+    roster_index: RosterIndex,
+    formula_col: int | None = None,
+    interactive: bool = True,
+) -> TargetLoadResult:
+    """CLI 用：偵測欄位對應（信心不足時互動詢問）後跑比對。"""
+    mapping = build_field_mapping(path, sheet_name, is_double_header=False, interactive=interactive)
+    return run_target_matching_with_mapping(path, mapping, roster_index, formula_col=formula_col)
 
 
 def export_review_csv(

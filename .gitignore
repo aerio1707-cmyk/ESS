@@ -5,6 +5,8 @@
 
 # 執行輸出（比對結果，含真實客戶資料）
 output/
+webapp/uploads/
+webapp/outputs/
 
 # 欄位對應設定記憶（可能記錄真實檔案結構特徵）
 config/mapping_profiles/

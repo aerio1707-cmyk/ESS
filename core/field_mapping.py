@@ -1,12 +1,16 @@
 """智慧欄位對應：關鍵字字典 + 使用者手動覆蓋雙軌制（規劃書 2.3），
 並將確認過的對應存成 mapping profile，供下次同結構檔案自動套用（規劃書十三.5，
 Phase 1 提前納入）。
+
+`detect_mapping_candidates` / `finalize_mapping` 為非阻塞式偵測+確認流程，供網頁介面
+（Phase 2）使用；`build_field_mapping` 是 CLI 用的一站式版本（信心不足時用 input() 詢問）。
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.excel_io import (
@@ -21,6 +25,8 @@ from core.models import FieldMapping
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 KEYWORDS_PATH = CONFIG_DIR / "field_keywords.json"
 PROFILE_DIR = CONFIG_DIR / "mapping_profiles"
+
+FIELD_KEYS = ["tax_id", "customer_name", "group_name", "acc_se"]
 
 
 def load_keywords() -> dict:
@@ -57,7 +63,7 @@ def prompt_manual_choice(field_label: str, candidates: list[tuple[str, int]]) ->
     print(f"「{field_label}」欄位偵測到多個候選，請選擇：")
     for i, (text, col) in enumerate(candidates, start=1):
         print(f"  [{i}] {text}（第 {col} 欄）")
-    print(f"  [0] 都不是，手動輸入欄號")
+    print("  [0] 都不是，手動輸入欄號")
     choice = input("請輸入選項編號：").strip()
     idx = int(choice)
     if idx == 0:
@@ -78,6 +84,19 @@ def load_saved_profile(signature: str) -> dict | None:
     return None
 
 
+def _mapping_from_saved(saved: dict) -> FieldMapping:
+    return FieldMapping(
+        sheet_name=saved["sheet_name"],
+        header_row=saved["header_row"],
+        data_start_row=saved["data_start_row"],
+        tax_id_col=saved["tax_id_col"],
+        customer_name_col=saved["customer_name_col"],
+        acc_se_output_col=saved["acc_se_output_col"],
+        group_name_col=saved.get("group_name_col"),
+        is_double_header=saved["is_double_header"],
+    )
+
+
 def save_profile(signature: str, mapping: FieldMapping) -> None:
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
     profile_path = PROFILE_DIR / f"{signature}.json"
@@ -95,14 +114,25 @@ def save_profile(signature: str, mapping: FieldMapping) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def build_field_mapping(
-    path: str | Path,
-    sheet_name: str,
-    *,
-    is_double_header: bool = False,
-    interactive: bool = True,
-) -> FieldMapping:
-    """建立單一檔案的欄位對應。is_double_header=True 用於名冊檔（雙層標頭，規劃書 2.5）。"""
+@dataclass
+class MappingDetection:
+    """欄位偵測結果，供呼叫端（CLI 或網頁）決定如何確認/覆蓋後再呼叫 finalize_mapping。"""
+
+    sheet_name: str
+    header_row: int
+    data_start_row: int
+    is_double_header: bool
+    signature: str
+    header_options: list[tuple[str, int]]  # 全部標頭選項 (文字, 欄號)，供下拉選單使用
+    best_guess: dict[str, int | None] = field(default_factory=dict)  # key in FIELD_KEYS
+    candidates: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
+    saved_mapping: FieldMapping | None = None  # 若命中既有 profile，直接可用，無需使用者確認
+
+
+def detect_mapping_candidates(
+    path: str | Path, sheet_name: str, *, is_double_header: bool = False
+) -> MappingDetection:
+    """讀取檔案、偵測標頭、猜測各欄位最佳欄號，不阻塞、不寫入 profile。"""
     ws = load_worksheet(path, sheet_name)
     merged_map = build_merged_value_map(ws)
     keywords = load_keywords()
@@ -113,58 +143,97 @@ def build_field_mapping(
         sub_row = header_row + 1
         header_map = parse_double_header(ws, header_row, sub_row, merged_map)
         data_start_row = sub_row + 1
-        header_texts = list(header_map.keys())
     else:
         header_map = parse_single_header(ws, header_row, merged_map)
         data_start_row = header_row + 1
-        header_texts = list(header_map.keys())
 
+    header_texts = list(header_map.keys())
     signature = structure_signature(sheet_name, header_texts)
+    header_options = sorted(header_map.items(), key=lambda kv: kv[1])
+
     saved = load_saved_profile(signature)
-    if saved:
-        return FieldMapping(
-            sheet_name=saved["sheet_name"],
-            header_row=saved["header_row"],
-            data_start_row=saved["data_start_row"],
-            tax_id_col=saved["tax_id_col"],
-            customer_name_col=saved["customer_name_col"],
-            acc_se_output_col=saved["acc_se_output_col"],
-            group_name_col=saved.get("group_name_col"),
-            is_double_header=saved["is_double_header"],
-        )
+    saved_mapping = _mapping_from_saved(saved) if saved else None
 
-    def resolve_or_prompt(label: str, key: str) -> int | None:
-        col, candidates = resolve_field(header_map, keywords[key]["exact"], keywords[key]["fuzzy"])
-        if col is not None:
-            return col
-        if not interactive:
-            return None
-        return prompt_manual_choice(label, candidates)
+    best_guess: dict[str, int | None] = {}
+    candidates: dict[str, list[tuple[str, int]]] = {}
 
-    tax_id_col = resolve_or_prompt("統編", "tax_id")
-    customer_name_col = resolve_or_prompt("客戶名稱", "customer_name")
+    for key in ("tax_id", "customer_name"):
+        col, cand = resolve_field(header_map, keywords[key]["exact"], keywords[key]["fuzzy"])
+        best_guess[key] = col
+        candidates[key] = cand
 
     if is_double_header:
-        # 名冊：鎖定 Acc. SE 群組的 Name 子欄，不誤抓 Backup Acc. SE / Manager（規劃書 2.5）
-        acc_se_col = header_map.get("Acc. SE__Name")
-        if acc_se_col is None and interactive:
-            acc_se_col = prompt_manual_choice("Acc. SE / Name（負責人姓名）", [])
-        group_name_col = header_map.get("Group Name")
-        if group_name_col is None and interactive:
-            group_name_col = prompt_manual_choice("Group Name", [])
+        best_guess["acc_se"] = header_map.get("Acc. SE__Name")
+        best_guess["group_name"] = header_map.get("Group Name")
+        candidates["acc_se"] = []
+        candidates["group_name"] = []
     else:
-        acc_se_col = resolve_or_prompt("Acc. SE（回填目標欄）", "acc_se")
-        group_name_col = None
+        col, cand = resolve_field(header_map, keywords["acc_se"]["exact"], keywords["acc_se"]["fuzzy"])
+        best_guess["acc_se"] = col
+        candidates["acc_se"] = cand
+        best_guess["group_name"] = None
+        candidates["group_name"] = []
 
-    mapping = FieldMapping(
+    return MappingDetection(
         sheet_name=sheet_name,
         header_row=header_row,
         data_start_row=data_start_row,
-        tax_id_col=tax_id_col,
-        customer_name_col=customer_name_col,
-        acc_se_output_col=acc_se_col,
-        group_name_col=group_name_col,
         is_double_header=is_double_header,
+        signature=signature,
+        header_options=header_options,
+        best_guess=best_guess,
+        candidates=candidates,
+        saved_mapping=saved_mapping,
     )
-    save_profile(signature, mapping)
+
+
+def finalize_mapping(detection: MappingDetection, choices: dict[str, int | None]) -> FieldMapping:
+    """依使用者確認/覆蓋後的欄號組成最終 FieldMapping，並記住這次選擇（規劃書十三.5）。"""
+    mapping = FieldMapping(
+        sheet_name=detection.sheet_name,
+        header_row=detection.header_row,
+        data_start_row=detection.data_start_row,
+        tax_id_col=choices.get("tax_id"),
+        customer_name_col=choices.get("customer_name"),
+        acc_se_output_col=choices.get("acc_se"),
+        group_name_col=choices.get("group_name"),
+        is_double_header=detection.is_double_header,
+    )
+    save_profile(detection.signature, mapping)
     return mapping
+
+
+def build_field_mapping(
+    path: str | Path,
+    sheet_name: str,
+    *,
+    is_double_header: bool = False,
+    interactive: bool = True,
+) -> FieldMapping:
+    """CLI 用一站式版本：偵測 → (信心不足時 input() 詢問) → 存 profile。"""
+    detection = detect_mapping_candidates(path, sheet_name, is_double_header=is_double_header)
+    if detection.saved_mapping:
+        return detection.saved_mapping
+
+    labels = {
+        "tax_id": "統編",
+        "customer_name": "客戶名稱",
+        "group_name": "Group Name",
+        "acc_se": "Acc. SE / Name（負責人姓名）" if is_double_header else "Acc. SE（回填目標欄）",
+    }
+
+    choices: dict[str, int | None] = {}
+    for key in FIELD_KEYS:
+        guess = detection.best_guess.get(key)
+        if guess is not None:
+            choices[key] = guess
+            continue
+        if key == "group_name" and not is_double_header:
+            choices[key] = None
+            continue
+        if not interactive:
+            choices[key] = None
+            continue
+        choices[key] = prompt_manual_choice(labels[key], detection.candidates.get(key, []))
+
+    return finalize_mapping(detection, choices)
