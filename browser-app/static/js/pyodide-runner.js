@@ -53,7 +53,18 @@ window.PyodideRunner = (() => {
     onProgress?.("安裝 openpyxl…");
     await pyodide.loadPackage("micropip");
     const micropip = pyodide.pyimport("micropip");
-    await micropip.install("openpyxl");
+    // 直接裝我們自己隨頁面附上的 wheel 檔（跟頁面同網域），不透過 PyPI
+    // (files.pythonhosted.org)。企業網路的防火牆常常放行 jsdelivr 這類主流 CDN
+    // （Pyodide 核心就是從那邊載的），卻沒把 PyPI 的下載站台列入白名單，導致
+    // micropip.install("openpyxl") 卡在抓 wheel 檔那一步。改成同網域抓檔就完全
+    // 不會遇到這個問題。
+    // 用絕對網址：vendor/ 放在 browser-app/ 底下（跟 static/ 同層），不像
+    // core/*.py 需要 "../" 往上一層。用 new URL() 算成絕對網址避免解析歧異。
+    const wheelUrls = [
+      new URL("vendor/et_xmlfile-2.0.0-py3-none-any.whl", window.location.href).href,
+      new URL("vendor/openpyxl-3.1.5-py2.py3-none-any.whl", window.location.href).href,
+    ];
+    await micropip.install(wheelUrls);
 
     onProgress?.("載入比對邏輯程式碼…");
     const FS = pyodide.FS;
