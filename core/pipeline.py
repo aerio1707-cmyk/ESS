@@ -86,15 +86,22 @@ def run_target_matching_with_mapping(
     roster_index: RosterIndex,
     formula_col: int | None = None,
 ) -> TargetLoadResult:
-    """給定已確認的 FieldMapping，跑完整比對。"""
+    """給定已確認的 FieldMapping，跑完整比對。
+
+    目標檔的 tax_id_col / customer_name_col 可能有一項是 None（來源檔案只有其中一種欄位，
+    見 core/browser_bridge.py 的「至少擇一」規則）。該欄未選時視為完全不存在，不清洗、
+    不產生「欄位缺失」異常——那是給「有此欄但這一列剛好是空的」的情況用的。
+    """
     ws = load_worksheet(path, mapping.sheet_name)
     merged_map = build_merged_value_map(ws)
 
-    raw_tax_ids = [
-        cell_value(ws, row, mapping.tax_id_col, merged_map)
-        for row in _iter_data_rows(ws, mapping.data_start_row)
-    ]
-    tax_id_profile = profile_column(raw_tax_ids)
+    tax_id_profile = None
+    if mapping.tax_id_col is not None:
+        raw_tax_ids = [
+            cell_value(ws, row, mapping.tax_id_col, merged_map)
+            for row in _iter_data_rows(ws, mapping.data_start_row)
+        ]
+        tax_id_profile = profile_column(raw_tax_ids)
 
     results: list[MatchResult] = []
     baseline_na = 0 if formula_col else None
@@ -106,8 +113,15 @@ def run_target_matching_with_mapping(
         if stringify(raw_tax) == "" and stringify(raw_customer) == "":
             continue  # 完全空白列
 
-        clean_tax, tax_anomalies = clean_tax_id(raw_tax, tax_id_profile)
-        clean_customer, main_name, customer_anomalies = clean_customer_name(raw_customer)
+        if mapping.tax_id_col is not None:
+            clean_tax, tax_anomalies = clean_tax_id(raw_tax, tax_id_profile)
+        else:
+            clean_tax, tax_anomalies = "", []
+
+        if mapping.customer_name_col is not None:
+            clean_customer, main_name, customer_anomalies = clean_customer_name(raw_customer)
+        else:
+            clean_customer, main_name, customer_anomalies = "", None, []
 
         result = match_target_row(
             row_index=row,

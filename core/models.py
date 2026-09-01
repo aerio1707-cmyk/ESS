@@ -29,8 +29,8 @@ class FieldMapping:
     sheet_name: str
     header_row: int
     data_start_row: int
-    tax_id_col: int
-    customer_name_col: int
+    tax_id_col: int | None  # 目標檔可擇一留空（見 core/browser_bridge.py 的必填規則）
+    customer_name_col: int | None
     acc_se_output_col: int
     group_name_col: int | None = None  # 僅名冊需要
     is_double_header: bool = False

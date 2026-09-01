@@ -80,16 +80,27 @@ def mapping_preview_json(payload_json: str) -> str:
     )
 
 
-def _build_mapping(side: dict, is_double_header: bool) -> FieldMapping | None:
-    required = ["sheet_name", "header_row", "data_start_row", "tax_id_col", "customer_name_col", "acc_se_col"]
-    if any(side.get(key) in (None, "") for key in required):
+def _build_mapping(side: dict, is_double_header: bool, require_both_ids: bool = True) -> FieldMapping | None:
+    """組出 FieldMapping。名冊（require_both_ids=True）統編＋客戶名稱兩者皆必填，
+    目標檔（require_both_ids=False）只要求至少擇一——來源檔案可能只有其中一種欄位。
+    """
+    base_required = ["sheet_name", "header_row", "data_start_row", "acc_se_col"]
+    if any(side.get(key) in (None, "") for key in base_required):
         return None
+
+    has_tax_id = side.get("tax_id_col") not in (None, "")
+    has_customer_name = side.get("customer_name_col") not in (None, "")
+    if require_both_ids and not (has_tax_id and has_customer_name):
+        return None
+    if not require_both_ids and not (has_tax_id or has_customer_name):
+        return None
+
     return FieldMapping(
         sheet_name=side["sheet_name"],
         header_row=int(side["header_row"]),
         data_start_row=int(side["data_start_row"]),
-        tax_id_col=int(side["tax_id_col"]),
-        customer_name_col=int(side["customer_name_col"]),
+        tax_id_col=int(side["tax_id_col"]) if has_tax_id else None,
+        customer_name_col=int(side["customer_name_col"]) if has_customer_name else None,
         acc_se_output_col=int(side["acc_se_col"]),
         group_name_col=int(side["group_name_col"]) if side.get("group_name_col") not in (None, "") else None,
         is_double_header=is_double_header,
@@ -106,10 +117,10 @@ def run_json(payload_json: str) -> str:
     output_dir = payload["output_dir"]
     source_stem = payload["source_stem"]
 
-    target_mapping = _build_mapping(target_form, is_double_header=False)
-    roster_mapping = _build_mapping(roster_form, is_double_header=True)
+    target_mapping = _build_mapping(target_form, is_double_header=False, require_both_ids=False)
+    roster_mapping = _build_mapping(roster_form, is_double_header=True, require_both_ids=True)
     if target_mapping is None:
-        return _err("目標檔的統編／客戶名稱／Acc. SE 欄位對應尚未完整選擇")
+        return _err("目標檔請至少選擇「統編」或「客戶名稱」其中一項，並選好 Acc. SE 欄位")
     if roster_mapping is None:
         return _err("名冊檔的統編／客戶名稱／Acc. SE(Name) 欄位對應尚未完整選擇")
 

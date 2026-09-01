@@ -39,7 +39,9 @@ def build_merged_value_map(ws: Worksheet) -> dict[tuple[int, int], object]:
     return merged_map
 
 
-def cell_value(ws: Worksheet, row: int, col: int, merged_map: dict[tuple[int, int], object]) -> object:
+def cell_value(ws: Worksheet, row: int, col: int | None, merged_map: dict[tuple[int, int], object]) -> object:
+    if col is None:
+        return None
     value = ws.cell(row=row, column=col).value
     if value is None and (row, col) in merged_map:
         return merged_map[(row, col)]

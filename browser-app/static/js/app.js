@@ -206,7 +206,10 @@
 
       state.targetDetection = data.target;
       state.rosterDetection = data.roster;
-      renderMappingGrid($("#targetMappingGrid"), data.target, ["tax_id", "customer_name", "acc_se"], "target");
+      renderMappingGrid($("#targetMappingGrid"), data.target, ["tax_id", "customer_name", "acc_se"], "target", [
+        "tax_id",
+        "customer_name",
+      ]);
       renderMappingGrid(
         $("#rosterMappingGrid"),
         data.roster,
@@ -233,7 +236,7 @@
     acc_se: "Acc. SE 欄",
   };
 
-  function renderMappingGrid(container, detection, fields, prefix) {
+  function renderMappingGrid(container, detection, fields, prefix, individuallyOptionalKeys = []) {
     container.innerHTML = "";
     const saved = detection.saved_mapping;
     fields.forEach((key) => {
@@ -246,16 +249,16 @@
 
       const select = document.createElement("select");
       select.id = `${prefix}-${key}`;
-      if (key !== "group_name") {
+      if (key === "group_name" || individuallyOptionalKeys.includes(key)) {
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = key === "group_name" ? "（不使用）" : "（留空，改用其他欄位比對）";
+        select.appendChild(none);
+      } else {
         const placeholder = document.createElement("option");
         placeholder.value = "";
         placeholder.textContent = "— 請選擇 —";
         select.appendChild(placeholder);
-      } else {
-        const none = document.createElement("option");
-        none.value = "";
-        none.textContent = "（不使用）";
-        select.appendChild(none);
       }
       detection.header_options.forEach((opt) => {
         const el = document.createElement("option");
@@ -291,10 +294,15 @@
   }
 
   $("#btnRun").addEventListener("click", async () => {
+    const targetForm = readMappingForm(state.targetDetection, ["tax_id", "customer_name", "acc_se"], "target");
+    if (!targetForm.tax_id_col && !targetForm.customer_name_col) {
+      showToast("目標檔請至少選擇「統編」或「客戶名稱」其中一項", true);
+      return;
+    }
+
     const btn = $("#btnRun");
     btn.disabled = true;
     try {
-      const targetForm = readMappingForm(state.targetDetection, ["tax_id", "customer_name", "acc_se"], "target");
       const rosterForm = readMappingForm(
         state.rosterDetection,
         ["tax_id", "customer_name", "group_name", "acc_se"],
