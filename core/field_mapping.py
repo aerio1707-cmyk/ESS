@@ -127,6 +127,7 @@ class MappingDetection:
     best_guess: dict[str, int | None] = field(default_factory=dict)  # key in FIELD_KEYS
     candidates: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
     saved_mapping: FieldMapping | None = None  # 若命中既有 profile，直接可用，無需使用者確認
+    acc_se_new_column: int | None = None  # 目標檔完全沒有Acc. SE欄時，資料結束後緊接的空白欄號
 
 
 def detect_mapping_candidates(
@@ -162,6 +163,7 @@ def detect_mapping_candidates(
         best_guess[key] = col
         candidates[key] = cand
 
+    acc_se_new_column: int | None = None
     if is_double_header:
         best_guess["acc_se"] = header_map.get("Acc. SE__Name")
         best_guess["group_name"] = header_map.get("Group Name")
@@ -169,6 +171,11 @@ def detect_mapping_candidates(
         candidates["group_name"] = []
     else:
         col, cand = resolve_field(header_map, keywords["acc_se"]["exact"], keywords["acc_se"]["fuzzy"])
+        if col is None and not cand:
+            # 目標檔完全沒有Acc. SE欄（無精準也無模糊候選）：自動選資料結束後緊接的空白欄，
+            # 不讓使用者另外挑其他空白欄位（規劃書外的新規則，2026-09-01）
+            acc_se_new_column = (max((c for _, c in header_options), default=0)) + 1
+            col = acc_se_new_column
         best_guess["acc_se"] = col
         candidates["acc_se"] = cand
         best_guess["group_name"] = None
@@ -184,6 +191,7 @@ def detect_mapping_candidates(
         best_guess=best_guess,
         candidates=candidates,
         saved_mapping=saved_mapping,
+        acc_se_new_column=acc_se_new_column,
     )
 
 

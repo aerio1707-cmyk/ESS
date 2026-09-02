@@ -58,7 +58,7 @@ def main() -> int:
         print(f"目標檔：{path}（{sheet}）")
         print("=" * 70)
 
-        stats, _results, review_path = run_full_pipeline(
+        result = run_full_pipeline(
             target_path=path,
             target_sheet=sheet,
             roster_path=args.roster,
@@ -68,9 +68,11 @@ def main() -> int:
             interactive=not args.non_interactive,
         )
 
-        print(stats.render())
+        print(result.stats.render())
         print()
-        print(f"核對用明細已輸出：{review_path}")
+        print(f"已回填主檔：{result.primary_output_path}")
+        print(f"異常明細表：{result.unmatched_report_path}")
+        print(f"逐列核對用 CSV：{result.review_csv_path}")
         print()
 
     return 0

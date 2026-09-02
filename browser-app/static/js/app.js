@@ -267,6 +267,14 @@
         el.textContent = `${displayText}（第 ${opt.col} 欄）`;
         select.appendChild(el);
       });
+      if (key === "acc_se" && detection.acc_se_new_column != null) {
+        // 目標檔本來就沒有 Acc. SE 欄，只多這一個「資料結束後緊接的空白欄」選項，
+        // 不開放挑選其他空白欄位
+        const el = document.createElement("option");
+        el.value = detection.acc_se_new_column;
+        el.textContent = `新增空白欄位（第 ${detection.acc_se_new_column} 欄）`;
+        select.appendChild(el);
+      }
 
       const savedKey = key === "acc_se" ? "acc_se_col" : `${key}_col`;
       const preselect = saved ? saved[savedKey] : detection.best_guess[key];

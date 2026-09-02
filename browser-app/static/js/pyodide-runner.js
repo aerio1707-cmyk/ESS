@@ -18,7 +18,7 @@ window.PyodideRunner = (() => {
     "core/pipeline.py",
     "core/browser_bridge.py",
   ];
-  const CONFIG_FILES = ["config/field_keywords.json"];
+  const CONFIG_FILES = ["config/field_keywords.json", "config/char_variants.json"];
 
   let pyodide = null;
   let bridge = null;

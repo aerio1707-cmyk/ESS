@@ -1,6 +1,6 @@
 """瀏覽器端（Pyodide）薄橋接層。
 
-把 `webapp/app.py` 對應的三支路由邏輯改寫成「接受 JSON 字串、回傳 JSON 字串」的
+把上傳／欄位對應／執行比對三支流程改寫成「接受 JSON 字串、回傳 JSON 字串」的
 函式，供 `browser-app/static/js/pyodide-runner.js` 透過 Pyodide 呼叫。刻意用單一
 JSON 字串進、單一 JSON 字串出，避免處理 Pyodide 的 JS↔Python proxy 物件轉換細節。
 不依賴 Flask、不管理 run_id/session——檔案路徑一律由呼叫端在 Pyodide 虛擬檔案系統
@@ -48,6 +48,7 @@ def _serialize_detection(detection) -> dict:
         "signature": detection.signature,
         "header_options": [{"text": text, "col": col} for text, col in detection.header_options],
         "best_guess": detection.best_guess,
+        "acc_se_new_column": detection.acc_se_new_column,
         "saved_mapping": (
             {
                 "tax_id_col": detection.saved_mapping.tax_id_col,

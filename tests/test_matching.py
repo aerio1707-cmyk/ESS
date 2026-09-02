@@ -212,3 +212,108 @@ def test_roster_group_name_too_short_skipped():
     roster = _roster()
     assert roster.group_name_skipped_count == 1
     assert all(e.group_name != "同" for e in roster.group_entries)
+
+
+# ---------------------------------------------------------------------------
+# 異體字正規化（台/臺，config/char_variants.json）與「僅一字之差」輔助診斷
+# ---------------------------------------------------------------------------
+
+
+def test_pass2_matches_via_variant_char_normalization():
+    entries = [
+        RosterEntry(
+            row_index=1, tax_id="", customer_name="臺灣恩益禧股份有限公司", group_name="臺灣恩益禧", acc_se_name="施柏屹"
+        ),
+    ]
+    roster = build_roster_index(entries)
+    result = match_target_row(
+        row_index=2,
+        raw_tax_id="",
+        raw_customer_name="台灣恩益禧股份有限公司",
+        tax_id_clean="",
+        customer_name_clean="台灣恩益禧股份有限公司",
+        customer_main_name_clean=None,
+        roster=roster,
+        pre_anomalies=[],
+    )
+    assert result.match_pass == MatchPass.CUSTOMER_NAME
+    assert result.matched_acc_se == "施柏屹"
+    assert AnomalyCode.VARIANT_CHAR_NORMALIZED in result.anomalies
+
+
+def test_pass3_matches_via_variant_char_normalization_when_literal_substring_fails():
+    entries = [
+        RosterEntry(row_index=1, tax_id="", customer_name="", group_name="臺灣恩益禧", acc_se_name="施柏屹"),
+    ]
+    roster = build_roster_index(entries)
+    result = match_target_row(
+        row_index=2,
+        raw_tax_id="",
+        raw_customer_name="台灣恩益禧股份有限公司",
+        tax_id_clean="",
+        customer_name_clean="台灣恩益禧股份有限公司",
+        customer_main_name_clean=None,
+        roster=roster,
+        pre_anomalies=[],
+    )
+    assert result.match_pass == MatchPass.GROUP_NAME
+    assert result.matched_acc_se == "施柏屹"
+    assert AnomalyCode.VARIANT_CHAR_NORMALIZED in result.anomalies
+
+
+def test_near_miss_customer_name_candidate_when_unmatched():
+    """揚/陽不在異體字對照表裡，比對不到，但應該被找出來當作候選讓人工判斷要不要收錄。"""
+    entries = [
+        RosterEntry(row_index=1, tax_id="", customer_name="民揚科技股份有限公司", group_name="", acc_se_name="王小明"),
+    ]
+    roster = build_roster_index(entries)
+    result = match_target_row(
+        row_index=2,
+        raw_tax_id="",
+        raw_customer_name="民陽科技股份有限公司",
+        tax_id_clean="",
+        customer_name_clean="民陽科技股份有限公司",
+        customer_main_name_clean=None,
+        roster=roster,
+        pre_anomalies=[],
+    )
+    assert result.match_pass == MatchPass.UNMATCHED
+    assert result.near_miss_customer_name == "民揚科技股份有限公司"
+    assert result.near_miss_group_name is None
+
+
+def test_near_miss_group_name_candidate_when_no_customer_name_candidate():
+    entries = [
+        RosterEntry(row_index=1, tax_id="", customer_name="", group_name="鑫和衛星電視", acc_se_name="楊敏裕"),
+    ]
+    roster = build_roster_index(entries)
+    result = match_target_row(
+        row_index=2,
+        raw_tax_id="",
+        raw_customer_name="鑫和衛星電祝股份有限公司",
+        tax_id_clean="",
+        customer_name_clean="鑫和衛星電祝股份有限公司",
+        customer_main_name_clean=None,
+        roster=roster,
+        pre_anomalies=[],
+    )
+    assert result.match_pass == MatchPass.UNMATCHED
+    assert result.near_miss_customer_name is None
+    assert result.near_miss_group_name == "鑫和衛星電視"
+
+
+def test_near_miss_none_when_nothing_close_enough():
+    roster = _roster()
+    result = match_target_row(
+        row_index=2,
+        raw_tax_id="",
+        raw_customer_name="完全無關的公司名稱",
+        tax_id_clean="",
+        customer_name_clean="完全無關的公司名稱",
+        customer_main_name_clean=None,
+        roster=roster,
+        pre_anomalies=[],
+    )
+    assert result.match_pass == MatchPass.UNMATCHED
+    assert result.near_miss_customer_name is None
+    assert result.near_miss_group_name is None

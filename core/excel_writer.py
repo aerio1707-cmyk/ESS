@@ -23,6 +23,9 @@ MIN_COL_WIDTH = 10
 MAX_COL_WIDTH = 50
 BASE_ROW_HEIGHT = 20
 
+NEW_ACC_SE_HEADER_TEXT = "Acc. SE"
+NEW_ACC_SE_HEADER_FILL = PatternFill("solid", fgColor="FFFF00")
+
 ANOMALY_ADVICE: dict[str, str] = {
     MatchPass.UNMATCHED.value: "名冊查無此客戶，如為正式客戶請確認是否應補進名冊",
     AnomalyCode.NON_STANDARD_TAX_ID_CODE.value: "暫編代碼，待補正式統編後再重新比對",
@@ -31,6 +34,7 @@ ANOMALY_ADVICE: dict[str, str] = {
     AnomalyCode.MISSING_CUSTOMER_NAME.value: "來源客戶名稱欄缺值，請確認原始資料",
     AnomalyCode.FORMULA_ERROR.value: "來源欄位為公式錯誤值，請確認原始資料",
     AnomalyCode.ROSTER_DUPLICATE_CONFLICT.value: "名冊同統編/名稱對應多位負責人，請人工確認正確人選",
+    AnomalyCode.VARIANT_CHAR_NORMALIZED.value: "已透過異體字對照表正規化才比對成功，建議快速確認回填結果是否正確",
 }
 
 
@@ -87,9 +91,19 @@ def write_primary_output(
 
     不新增任何欄位（如 Match Status）、不上色、不調整欄寬列高/凍結窗格/框線——
     使用者 2026-08-18 明確要求輸出檔案除了回填欄位本身，其他一律不動（含既有格式）。
+
+    唯一例外（2026-09-01）：如果目標檔本來就沒有 Acc. SE 欄，欄位對應時會自動選用資料
+    結束後緊接的空白欄（見 core/field_mapping.py 的 acc_se_new_column）。這種情況下，那一欄
+    的表頭列本來就是空的，此時才會額外寫入「Acc. SE」文字並上黃色底色，方便收到檔案的人
+    看得懂這一欄是什麼；如果選到的欄位表頭本來就有文字（既有欄位），則完全不動，維持原規則。
     """
     wb = load_workbook(target_path)
     ws = wb[mapping.sheet_name]
+
+    header_cell = ws.cell(row=mapping.header_row, column=mapping.acc_se_output_col)
+    if header_cell.value in (None, ""):
+        header_cell.value = NEW_ACC_SE_HEADER_TEXT
+        header_cell.fill = NEW_ACC_SE_HEADER_FILL
 
     results_by_row = {r.row_index: r for r in results}
 
@@ -107,13 +121,24 @@ def write_primary_output(
     return out_path
 
 
-UNMATCHED_REPORT_HEADERS = ["原始列號", "客戶名稱", "統編(原始值)", "統編(清洗後)", "失敗原因分類", "建議處理方式"]
+UNMATCHED_REPORT_HEADERS = [
+    "原始列號",
+    "客戶名稱",
+    "統編(原始值)",
+    "統編(清洗後)",
+    "失敗原因分類",
+    "建議處理方式",
+    "疑似異體字候選(客戶名稱)",
+    "疑似異體字候選(Group Name)",
+]
+
+_REVIEW_ANOMALIES = {AnomalyCode.ROSTER_DUPLICATE_CONFLICT, AnomalyCode.VARIANT_CHAR_NORMALIZED}
 
 
 def _needs_report(result: MatchResult) -> bool:
     if result.match_pass == MatchPass.UNMATCHED:
         return True
-    return AnomalyCode.ROSTER_DUPLICATE_CONFLICT in result.anomalies
+    return bool(_REVIEW_ANOMALIES & set(result.anomalies))
 
 
 def _failure_reason(result: MatchResult) -> str:
@@ -152,6 +177,8 @@ def write_unmatched_report(
         ws.cell(row=row_idx, column=4, value=result.clean_tax_id)
         ws.cell(row=row_idx, column=5, value=reason)
         ws.cell(row=row_idx, column=6, value=ANOMALY_ADVICE.get(reason, "請人工複核"))
+        ws.cell(row=row_idx, column=7, value=result.near_miss_customer_name or "")
+        ws.cell(row=row_idx, column=8, value=result.near_miss_group_name or "")
         row_idx += 1
 
     max_row = row_idx - 1

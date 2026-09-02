@@ -36,7 +36,7 @@ def main() -> int:
     args = parse_args()
     formula_col = column_index_from_string(args.formula_col) if args.formula_col else None
 
-    stats, _results, review_path = run_full_pipeline(
+    result = run_full_pipeline(
         target_path=args.target,
         target_sheet=args.target_sheet,
         roster_path=args.roster,
@@ -46,9 +46,11 @@ def main() -> int:
         interactive=not args.non_interactive,
     )
 
-    print(stats.render())
+    print(result.stats.render())
     print()
-    print(f"核對用明細已輸出：{review_path}")
+    print(f"已回填主檔：{result.primary_output_path}")
+    print(f"異常明細表：{result.unmatched_report_path}")
+    print(f"逐列核對用 CSV：{result.review_csv_path}")
     return 0
 
 

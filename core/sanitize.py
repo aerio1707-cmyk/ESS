@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import functools
+import json
 import re
 import unicodedata
+from pathlib import Path
 
 from core.models import AnomalyCode
 from core.profiling import PERSONAL_ID_RE, ColumnProfile, stringify
@@ -11,6 +14,28 @@ from core.profiling import PERSONAL_ID_RE, ColumnProfile, stringify
 INVISIBLE_CHARS = ("​", "‌", "‍", "﻿")  # 零寬空格/連接符、BOM
 FORMULA_ERROR_TOKENS = {"#N/A", "#VALUE!", "#REF!", "#DIV/0!", "#NAME?", "#NULL!", "#NUM!"}
 ANNOTATION_RE = re.compile(r"^(.*?)[（(]")
+
+CHAR_VARIANTS_PATH = Path(__file__).resolve().parent.parent / "config" / "char_variants.json"
+
+
+@functools.lru_cache(maxsize=1)
+def load_char_variants() -> dict[str, str]:
+    """異體字對照表：{異體字: 正規化後的字}，只給比對用，不影響顯示用的原始文字。
+
+    目前只收錄已在實際資料中確認過的組合（見 config/char_variants.json），刻意不預先
+    塞一堆猜測的異體字組合——寧可漏抓、靠 find_near_miss_candidates 輔助人工逐步發現，
+    也不要猜錯造成誤配。
+    """
+    with open(CHAR_VARIANTS_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def variant_normalize(text: str) -> str:
+    """把文字裡的異體字轉成對照表裡的正規化字，僅供比對使用（見 load_char_variants）。"""
+    table = load_char_variants()
+    if not table:
+        return text
+    return "".join(table.get(ch, ch) for ch in text)
 
 # 補零規則僅套用於「全數字且長度為眾數-1」且落在 5~7 碼區間（規劃書 3.2 #1、#9）
 PADDABLE_LENGTH_RANGE = range(5, 8)

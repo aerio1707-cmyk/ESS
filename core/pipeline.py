@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from core.excel_io import build_merged_value_map, cell_value, load_worksheet
+from core.excel_writer import write_primary_output, write_unmatched_report
 from core.field_mapping import build_field_mapping
 from core.matching import RosterEntry, RosterIndex, build_roster_index, match_target_row
 from core.models import FieldMapping, MatchResult, MatchStats
@@ -193,6 +194,20 @@ def export_review_csv(
     return out_path
 
 
+@dataclass
+class FullPipelineResult:
+    """CLI／驗證腳本用的完整流程結果，跟 browser-app（core/browser_bridge.py）輸出的
+    檔案內容一致（已回填主檔＋異常明細表），另外多一份 CSV 逐列核對明細（CLI 沒有網頁
+    預覽表格可看，這份 CSV 補這個用途，GitHub Pages 版沒有對應物）。
+    """
+
+    stats: MatchStats
+    results: list[MatchResult]
+    review_csv_path: Path
+    primary_output_path: Path
+    unmatched_report_path: Path
+
+
 def run_full_pipeline(
     target_path: str | Path,
     target_sheet: str,
@@ -201,7 +216,7 @@ def run_full_pipeline(
     formula_col: int | None = None,
     output_dir: str | Path = "output",
     interactive: bool = True,
-) -> tuple[MatchStats, list[MatchResult], Path]:
+) -> FullPipelineResult:
     roster_entries, _roster_mapping = load_roster_entries(roster_path, roster_sheet, interactive=interactive)
     roster_index = build_roster_index(roster_entries)
 
@@ -210,4 +225,15 @@ def run_full_pipeline(
     )
     stats = build_stats(target_result.results, roster_index, target_result.formula_na_baseline)
     review_path = export_review_csv(target_result.results, target_path, output_dir)
-    return stats, target_result.results, review_path
+    stem = Path(target_path).stem
+    primary_path = write_primary_output(
+        target_path, target_result.mapping, target_result.results, output_dir=output_dir, source_stem=stem
+    )
+    unmatched_path = write_unmatched_report(target_result.results, stem, output_dir=output_dir)
+    return FullPipelineResult(
+        stats=stats,
+        results=target_result.results,
+        review_csv_path=review_path,
+        primary_output_path=primary_path,
+        unmatched_report_path=unmatched_path,
+    )

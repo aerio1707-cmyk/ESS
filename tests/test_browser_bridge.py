@@ -189,6 +189,64 @@ def test_run_json_target_requires_at_least_one_id_field(tmp_path):
     assert "error" in result
 
 
+def test_run_json_target_without_acc_se_column_uses_new_blank_column(tmp_path):
+    """目標檔完全沒有 Acc. SE 欄：mapping-preview 要回報 acc_se_new_column，用它跑比對後，
+    輸出檔案該欄要自動有「Acc. SE」表頭＋黃色底色。"""
+    target_path = tmp_path / "target_no_acc_se.xlsx"
+    roster_path = tmp_path / "roster.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "工作表1"
+    ws.append(["客戶名稱", "統一編號"])  # 沒有 Acc. SE 欄
+    ws.append(["測試公司A", "10000001"])
+    wb.save(target_path)
+    _make_roster(roster_path)
+
+    preview_payload = {
+        "target_path": str(target_path),
+        "target_sheet": "工作表1",
+        "roster_path": str(roster_path),
+        "roster_sheet": "Special Acc list",
+    }
+    preview = json.loads(mapping_preview_json(json.dumps(preview_payload)))
+    assert preview["target"]["acc_se_new_column"] == 3
+    assert preview["target"]["best_guess"]["acc_se"] == 3
+
+    payload = {
+        "target_path": str(target_path),
+        "roster_path": str(roster_path),
+        "target": {
+            "sheet_name": "工作表1",
+            "header_row": 1,
+            "data_start_row": 2,
+            "tax_id_col": 2,
+            "customer_name_col": 1,
+            "acc_se_col": 3,
+        },
+        "roster": {
+            "sheet_name": "Special Acc list",
+            "header_row": 1,
+            "data_start_row": 3,
+            "tax_id_col": 1,
+            "customer_name_col": 2,
+            "group_name_col": 3,
+            "acc_se_col": 4,
+        },
+        "formula_col": None,
+        "output_dir": str(tmp_path / "out"),
+        "source_stem": "target",
+    }
+    result = json.loads(run_json(json.dumps(payload)))
+    assert result["preview_rows"][0]["matched_acc_se"] == "王小明"
+
+    primary_path = result["downloads"]["primary"]
+    wb_out = openpyxl.load_workbook(primary_path)
+    ws_out = wb_out["工作表1"]
+    assert ws_out.cell(row=1, column=3).value == "Acc. SE"
+    assert ws_out.cell(row=1, column=3).fill.fgColor.rgb == "00FFFF00"
+    assert ws_out.cell(row=2, column=3).value == "王小明"
+
+
 def test_run_json_missing_mapping_returns_error(tmp_path):
     target_path = tmp_path / "target.xlsx"
     roster_path = tmp_path / "roster.xlsx"

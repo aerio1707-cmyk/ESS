@@ -20,6 +20,7 @@ class AnomalyCode(str, Enum):
     ROSTER_DUPLICATE_CONFLICT = "名冊重複衝突"
     ROSTER_DATA_MISSING = "名冊資料缺失"
     GROUP_NAME_TOO_SHORT = "GroupName過短已跳過模糊比對"
+    VARIANT_CHAR_NORMALIZED = "客戶名稱含異體字已正規化比對"
 
 
 @dataclass
@@ -70,6 +71,8 @@ class MatchResult:
     anomalies: list[AnomalyCode] = field(default_factory=list)
     secondary_match: str | None = None  # 次要命中的 Acc. SE（供人工複核名冊矛盾）
     duplicate_candidates: list[str] = field(default_factory=list)
+    near_miss_customer_name: str | None = None  # 僅無法匹配時填：名冊客戶名稱僅一字之差候選（協助發現異體字，非正式比對結果）
+    near_miss_group_name: str | None = None  # 僅無法匹配時填：名冊GroupName於客戶名稱中僅一字之差候選（同上）
 
 
 @dataclass
